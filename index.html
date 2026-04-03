@@ -165,7 +165,7 @@
 
     <div class="btn-row">
       <button id="fullscreen-btn" onclick="openFullscreen()">⛶ На весь экран (Zoom)</button>
-      <button id="pdf-btn" onclick="savePDF()">⬇ Сохранить PDF</button>
+      <button id="pdf-btn" onclick="savePDF()">⬇ Сохранить PDF A4</button>
     </div>
     <button id="reset-btn" onclick="resetApp()">Загрузить другой шаблон</button>
 
@@ -191,7 +191,6 @@
   </div>
   <div id="fs-hint">нажмите, чтобы закрыть</div>
 </div>
-
 
 <script>
   let imgSrc = '';
@@ -248,11 +247,6 @@
     document.getElementById('shadow-opacity-val').textContent = s.shadowOpacity;
     document.getElementById('shadow-blur-val').textContent = s.shadowBlur;
 
-
-    const wrap = document.getElementById('preview-wrap');
-    const wrapW = wrap.clientWidth;
-    const wrapH = wrap.clientHeight || document.getElementById('bg-img').clientHeight;
-
     const overlay = document.getElementById('name-overlay');
     overlay.textContent = name;
     overlay.style.fontSize = s.fs + 'px';
@@ -275,14 +269,19 @@
 
   handle.addEventListener('mousedown', function(e) {
     dragging = true;
-    startX = e.clientX; startY = e.clientY;
-    startPosX = posX; startPosY = posY;
+    startX = e.clientX;
+    startY = e.clientY;
+    startPosX = posX;
+    startPosY = posY;
     e.preventDefault();
   });
+
   handle.addEventListener('touchstart', function(e) {
     dragging = true;
-    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
-    startPosX = posX; startPosY = posY;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    startPosX = posX;
+    startPosY = posY;
     e.preventDefault();
   }, { passive: false });
 
@@ -290,6 +289,7 @@
     if (!dragging) return;
     moveDrag(e.clientX, e.clientY);
   });
+
   document.addEventListener('touchmove', function(e) {
     if (!dragging) return;
     moveDrag(e.touches[0].clientX, e.touches[0].clientY);
@@ -341,7 +341,9 @@
     document.getElementById('fs-overlay').classList.remove('active');
   }
 
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFullscreen(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeFullscreen();
+  });
 
   function downloadCanvasAsPDF(canvas, filename) {
     const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
@@ -350,14 +352,31 @@
     const jpegArr = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) jpegArr[i] = binary.charCodeAt(i);
 
+    // A4 без полей: изображение заполняет страницу полностью.
+    // Если пропорции грамоты и A4 не совпадают, края слегка обрезаются.
     const isLandscape = canvas.width > canvas.height;
     const pw = isLandscape ? 841.89 : 595.28;
     const ph = isLandscape ? 595.28 : 841.89;
-    const ratio = canvas.width / canvas.height;
+
+    const imageRatio = canvas.width / canvas.height;
     const pageRatio = pw / ph;
+
     let iw, ih, ix, iy;
-    if (ratio > pageRatio) { iw = pw; ih = pw / ratio; ix = 0; iy = (ph - ih) / 2; }
-    else { ih = ph; iw = ph * ratio; ix = (pw - iw) / 2; iy = 0; }
+
+    // COVER: заполняем страницу целиком, разрешая лёгкую обрезку
+    if (imageRatio > pageRatio) {
+      // изображение шире страницы -> подгоняем по высоте
+      ih = ph;
+      iw = ph * imageRatio;
+      ix = (pw - iw) / 2;
+      iy = 0;
+    } else {
+      // изображение уже/выше страницы -> подгоняем по ширине
+      iw = pw;
+      ih = pw / imageRatio;
+      ix = 0;
+      iy = (ph - ih) / 2;
+    }
 
     const enc = s => new TextEncoder().encode(s);
     const nl = '\n';
@@ -371,41 +390,56 @@
     const header = '%PDF-1.4' + nl;
 
     let off = [0,0,0,0,0,0], pos = header.length;
-    off[1]=pos; pos+=obj1.length;
-    off[2]=pos; pos+=obj2.length;
-    off[3]=pos; pos+=obj3.length;
-    off[4]=pos; pos+=obj4.length;
-    off[5]=pos; pos+=obj5pre.length + jpegArr.length + obj5post.length;
+    off[1] = pos; pos += obj1.length;
+    off[2] = pos; pos += obj2.length;
+    off[3] = pos; pos += obj3.length;
+    off[4] = pos; pos += obj4.length;
+    off[5] = pos; pos += obj5pre.length + jpegArr.length + obj5post.length;
 
     let xref = 'xref' + nl + '0 6' + nl + '0000000000 65535 f ' + nl;
-    for (let i=1;i<=5;i++) xref += off[i].toString().padStart(10,'0') + ' 00000 n ' + nl;
+    for (let i = 1; i <= 5; i++) {
+      xref += off[i].toString().padStart(10,'0') + ' 00000 n ' + nl;
+    }
     const trailer = 'trailer' + nl + '<< /Size 6 /Root 1 0 R >>' + nl + 'startxref' + nl + pos + nl + '%%EOF';
 
-    const parts = [enc(header),enc(obj1),enc(obj2),enc(obj3),enc(obj4),enc(obj5pre),jpegArr,enc(obj5post),enc(xref),enc(trailer)];
-    const total = parts.reduce((s,p)=>s+p.length,0);
+    const parts = [enc(header), enc(obj1), enc(obj2), enc(obj3), enc(obj4), enc(obj5pre), jpegArr, enc(obj5post), enc(xref), enc(trailer)];
+    const total = parts.reduce((s,p) => s + p.length, 0);
     const result = new Uint8Array(total);
     let offset = 0;
-    for (const p of parts) { result.set(p, offset); offset += p.length; }
+    for (const p of parts) {
+      result.set(p, offset);
+      offset += p.length;
+    }
 
-    const blob = new Blob([result], {type:'application/pdf'});
+    const blob = new Blob([result], { type:'application/pdf' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = filename; a.click();
+    a.href = url;
+    a.download = filename;
+    a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-    function savePDF() {
+  function savePDF() {
     const name = document.getElementById('name-input').value.trim();
-    if (!name) { alert('Введите Фамилию и Имя участника'); return; }
-    if (!imgSrc) { alert('Сначала загрузите шаблон грамоты'); return; }
+    if (!name) {
+      alert('Введите Фамилию и Имя участника');
+      return;
+    }
+    if (!imgSrc) {
+      alert('Сначала загрузите шаблон грамоты');
+      return;
+    }
+
     const btn = document.getElementById('pdf-btn');
     btn.disabled = true;
     btn.textContent = 'Создаём PDF...';
+
     renderNameToCanvas(name).then(canvas => {
       const safeName = name.replace(/[^a-zA-Zа-яА-ЯёЁ0-9 _-]/g,'').trim() || 'gramota';
       downloadCanvasAsPDF(canvas, safeName + '.pdf');
       btn.disabled = false;
-      btn.textContent = '⬇ Сохранить PDF';
+      btn.textContent = '⬇ Сохранить PDF A4';
     });
   }
 
@@ -415,7 +449,8 @@
     document.getElementById('tabs').style.display = 'none';
     document.getElementById('file-input').value = '';
     document.getElementById('name-input').value = '';
-    posX = 0.5; posY = 0.6;
+    posX = 0.5;
+    posY = 0.6;
   }
 
   function switchTab(tab) {
@@ -423,11 +458,13 @@
     document.getElementById('tab-batch').classList.toggle('active', tab === 'batch');
     const singleEls = document.querySelectorAll('.section, .field-row, .btn-row, #reset-btn, .hint, #preview-wrap');
     const batchPanel = document.getElementById('batch-panel');
+
     if (tab === 'batch') {
-      singleEls.forEach(el => { if (!el.closest('#batch-panel')) el.style.display = 'none'; });
+      singleEls.forEach(el => {
+        if (!el.closest('#batch-panel')) el.style.display = 'none';
+      });
       document.querySelector('.field-row').style.display = 'none';
       batchPanel.style.display = 'block';
-      // Show preview
       document.getElementById('preview-wrap').style.display = 'block';
       document.getElementById('reset-btn').style.display = 'block';
     } else {
@@ -441,52 +478,81 @@
       const s = getStyle();
       const bgImg = document.getElementById('bg-img');
       const img = new Image();
+
       img.onload = function() {
         const canvas = document.createElement('canvas');
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
         const ctx = canvas.getContext('2d');
+
         ctx.drawImage(img, 0, 0);
+
         const scale = bgImg.clientWidth > 0 ? img.naturalWidth / bgImg.clientWidth : 1;
         const scaledFs = Math.round(s.fs * scale);
         const xPos = img.naturalWidth * posX;
         const yPos = img.naturalHeight * posY;
+
         if (s.shadowOpacity > 0) {
           ctx.save();
           ctx.shadowColor = hexToRgba(s.shadowColor, s.shadowOpacity);
           ctx.shadowBlur = s.shadowBlur * scale * 2;
-          ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
-          let fp = ''; if (s.style.includes('bold')) fp += 'bold '; if (s.style.includes('italic')) fp += 'italic ';
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+
+          let fp = '';
+          if (s.style.includes('bold')) fp += 'bold ';
+          if (s.style.includes('italic')) fp += 'italic ';
+
           ctx.font = `${fp}${scaledFs}px ${s.family}`;
-          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
           ctx.fillStyle = s.color;
           ctx.fillText(name, xPos, yPos);
+
           ctx.shadowBlur = s.shadowBlur * scale;
           ctx.fillText(name, xPos, yPos);
           ctx.restore();
         }
-        let fontParts = ''; if (s.style.includes('bold')) fontParts += 'bold '; if (s.style.includes('italic')) fontParts += 'italic ';
+
+        let fontParts = '';
+        if (s.style.includes('bold')) fontParts += 'bold ';
+        if (s.style.includes('italic')) fontParts += 'italic ';
+
         ctx.font = `${fontParts}${scaledFs}px ${s.family}`;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
         ctx.fillStyle = s.color;
         ctx.fillText(name, xPos, yPos);
+
         resolve(canvas);
       };
+
       img.src = imgSrc;
     });
   }
 
   async function runBatch() {
     const raw = document.getElementById('batch-names').value.trim();
-    if (!raw) { alert('Введите список имён'); return; }
-    if (!imgSrc) { alert('Сначала загрузите шаблон'); return; }
+    if (!raw) {
+      alert('Введите список имён');
+      return;
+    }
+    if (!imgSrc) {
+      alert('Сначала загрузите шаблон');
+      return;
+    }
+
     const names = raw.split('\n').map(n => n.trim()).filter(n => n.length > 0);
-    if (names.length === 0) { alert('Список пустой'); return; }
+    if (names.length === 0) {
+      alert('Список пустой');
+      return;
+    }
 
     const btn = document.getElementById('batch-btn');
     const progress = document.getElementById('batch-progress');
     const status = document.getElementById('batch-status');
     const fill = document.getElementById('batch-progress-fill');
+
     btn.disabled = true;
     progress.style.display = 'block';
 
