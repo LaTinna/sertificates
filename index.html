@@ -194,7 +194,6 @@
 
 <script>
   let imgSrc = '';
-  // Position as fraction of image (0..1)
   let posX = 0.5, posY = 0.6;
 
   document.getElementById('file-input').addEventListener('change', function(e) {
@@ -263,7 +262,6 @@
     handle.style.top = (posY * 100) + '%';
   }
 
-  // Drag logic
   const handle = document.getElementById('drag-handle');
   let dragging = false, startX, startY, startPosX, startPosY;
 
@@ -346,14 +344,12 @@
   });
 
   function downloadCanvasAsPDF(canvas, filename) {
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.98);
     const base64 = dataUrl.split(',')[1];
     const binary = atob(base64);
     const jpegArr = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) jpegArr[i] = binary.charCodeAt(i);
 
-    // A4 без полей: изображение заполняет страницу полностью.
-    // Если пропорции грамоты и A4 не совпадают, края слегка обрезаются.
     const isLandscape = canvas.width > canvas.height;
     const pw = isLandscape ? 841.89 : 595.28;
     const ph = isLandscape ? 595.28 : 841.89;
@@ -363,33 +359,70 @@
 
     let iw, ih, ix, iy;
 
-    // COVER: заполняем страницу целиком, разрешая лёгкую обрезку
     if (imageRatio > pageRatio) {
-      // изображение шире страницы -> подгоняем по высоте
       ih = ph;
-      iw = ph * imageRatio;
+      iw = ih * imageRatio;
       ix = (pw - iw) / 2;
       iy = 0;
     } else {
-      // изображение уже/выше страницы -> подгоняем по ширине
       iw = pw;
-      ih = pw / imageRatio;
+      ih = iw / imageRatio;
       ix = 0;
       iy = (ph - ih) / 2;
     }
 
+    const overscan = 1.03;
+    const extraW = iw * (overscan - 1);
+    const extraH = ih * (overscan - 1);
+
+    iw += extraW;
+    ih += extraH;
+    ix -= extraW / 2;
+    iy -= extraH / 2;
+
     const enc = s => new TextEncoder().encode(s);
     const nl = '\n';
-    const contentStr = 'q ' + iw.toFixed(2) + ' 0 0 ' + ih.toFixed(2) + ' ' + ix.toFixed(2) + ' ' + iy.toFixed(2) + ' cm /Im1 Do Q';
+
+    const contentStr =
+      `q 0 0 ${pw.toFixed(2)} ${ph.toFixed(2)} re W n ` +
+      `${iw.toFixed(2)} 0 0 ${ih.toFixed(2)} ${ix.toFixed(2)} ${iy.toFixed(2)} cm /Im1 Do Q`;
+
     const obj1 = '1 0 obj' + nl + '<< /Type /Catalog /Pages 2 0 R >>' + nl + 'endobj' + nl;
     const obj2 = '2 0 obj' + nl + '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' + nl + 'endobj' + nl;
-    const obj3 = '3 0 obj' + nl + '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + pw.toFixed(2) + ' ' + ph.toFixed(2) + '] /Contents 4 0 R /Resources << /XObject << /Im1 5 0 R >> >> >>' + nl + 'endobj' + nl;
-    const obj4 = '4 0 obj' + nl + '<< /Length ' + contentStr.length + ' >>' + nl + 'stream' + nl + contentStr + nl + 'endstream' + nl + 'endobj' + nl;
-    const obj5pre = '5 0 obj' + nl + '<< /Type /XObject /Subtype /Image /Width ' + canvas.width + ' /Height ' + canvas.height + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpegArr.length + ' >>' + nl + 'stream' + nl;
+    const obj3 =
+      '3 0 obj' + nl +
+      '<< /Type /Page /Parent 2 0 R ' +
+      '/MediaBox [0 0 ' + pw.toFixed(2) + ' ' + ph.toFixed(2) + '] ' +
+      '/CropBox [0 0 ' + pw.toFixed(2) + ' ' + ph.toFixed(2) + '] ' +
+      '/BleedBox [0 0 ' + pw.toFixed(2) + ' ' + ph.toFixed(2) + '] ' +
+      '/TrimBox [0 0 ' + pw.toFixed(2) + ' ' + ph.toFixed(2) + '] ' +
+      '/Contents 4 0 R ' +
+      '/Resources << /XObject << /Im1 5 0 R >> >> >>' + nl +
+      'endobj' + nl;
+
+    const obj4 =
+      '4 0 obj' + nl +
+      '<< /Length ' + contentStr.length + ' >>' + nl +
+      'stream' + nl +
+      contentStr + nl +
+      'endstream' + nl +
+      'endobj' + nl;
+
+    const obj5pre =
+      '5 0 obj' + nl +
+      '<< /Type /XObject /Subtype /Image ' +
+      '/Width ' + canvas.width + ' ' +
+      '/Height ' + canvas.height + ' ' +
+      '/ColorSpace /DeviceRGB ' +
+      '/BitsPerComponent 8 ' +
+      '/Filter /DCTDecode ' +
+      '/Length ' + jpegArr.length + ' >>' + nl +
+      'stream' + nl;
+
     const obj5post = nl + 'endstream' + nl + 'endobj' + nl;
     const header = '%PDF-1.4' + nl;
 
-    let off = [0,0,0,0,0,0], pos = header.length;
+    let off = [0, 0, 0, 0, 0, 0], pos = header.length;
     off[1] = pos; pos += obj1.length;
     off[2] = pos; pos += obj2.length;
     off[3] = pos; pos += obj3.length;
@@ -398,20 +431,39 @@
 
     let xref = 'xref' + nl + '0 6' + nl + '0000000000 65535 f ' + nl;
     for (let i = 1; i <= 5; i++) {
-      xref += off[i].toString().padStart(10,'0') + ' 00000 n ' + nl;
+      xref += off[i].toString().padStart(10, '0') + ' 00000 n ' + nl;
     }
-    const trailer = 'trailer' + nl + '<< /Size 6 /Root 1 0 R >>' + nl + 'startxref' + nl + pos + nl + '%%EOF';
 
-    const parts = [enc(header), enc(obj1), enc(obj2), enc(obj3), enc(obj4), enc(obj5pre), jpegArr, enc(obj5post), enc(xref), enc(trailer)];
-    const total = parts.reduce((s,p) => s + p.length, 0);
+    const trailer =
+      'trailer' + nl +
+      '<< /Size 6 /Root 1 0 R >>' + nl +
+      'startxref' + nl +
+      pos + nl +
+      '%%EOF';
+
+    const parts = [
+      enc(header),
+      enc(obj1),
+      enc(obj2),
+      enc(obj3),
+      enc(obj4),
+      enc(obj5pre),
+      jpegArr,
+      enc(obj5post),
+      enc(xref),
+      enc(trailer)
+    ];
+
+    const total = parts.reduce((s, p) => s + p.length, 0);
     const result = new Uint8Array(total);
     let offset = 0;
+
     for (const p of parts) {
       result.set(p, offset);
       offset += p.length;
     }
 
-    const blob = new Blob([result], { type:'application/pdf' });
+    const blob = new Blob([result], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
