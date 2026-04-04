@@ -165,7 +165,7 @@
 
     <div class="btn-row">
       <button id="fullscreen-btn" onclick="openFullscreen()">⛶ На весь экран (Zoom)</button>
-      <button id="pdf-btn" onclick="savePDF()">⬇ Сохранить PDF A4</button>
+      <button id="pdf-btn" onclick="savePDF()">⬇ Сохранить PDF</button>
     </div>
     <button id="reset-btn" onclick="resetApp()">Загрузить другой шаблон</button>
 
@@ -350,42 +350,33 @@
     const jpegArr = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) jpegArr[i] = binary.charCodeAt(i);
 
-    const isLandscape = canvas.width > canvas.height;
-    const pw = isLandscape ? 841.89 : 595.28;
-    const ph = isLandscape ? 595.28 : 841.89;
+    const ratio = canvas.width / canvas.height;
+    const A4_W = 595.28;
+    const A4_H = 841.89;
 
-    const imageRatio = canvas.width / canvas.height;
-    const pageRatio = pw / ph;
+    let pw, ph;
 
-    let iw, ih, ix, iy;
+    if (ratio >= 1) {
+      pw = A4_H;
+      ph = pw / ratio;
 
-    if (imageRatio > pageRatio) {
-      ih = ph;
-      iw = ih * imageRatio;
-      ix = (pw - iw) / 2;
-      iy = 0;
+      if (ph > A4_W) {
+        ph = A4_W;
+        pw = ph * ratio;
+      }
     } else {
-      iw = pw;
-      ih = iw / imageRatio;
-      ix = 0;
-      iy = (ph - ih) / 2;
+      ph = A4_H;
+      pw = ph * ratio;
+
+      if (pw > A4_W) {
+        pw = A4_W;
+        ph = pw / ratio;
+      }
     }
-
-    const overscan = 1.03;
-    const extraW = iw * (overscan - 1);
-    const extraH = ih * (overscan - 1);
-
-    iw += extraW;
-    ih += extraH;
-    ix -= extraW / 2;
-    iy -= extraH / 2;
 
     const enc = s => new TextEncoder().encode(s);
     const nl = '\n';
-
-    const contentStr =
-      `q 0 0 ${pw.toFixed(2)} ${ph.toFixed(2)} re W n ` +
-      `${iw.toFixed(2)} 0 0 ${ih.toFixed(2)} ${ix.toFixed(2)} ${iy.toFixed(2)} cm /Im1 Do Q`;
+    const contentStr = `q ${pw.toFixed(2)} 0 0 ${ph.toFixed(2)} 0 0 cm /Im1 Do Q`;
 
     const obj1 = '1 0 obj' + nl + '<< /Type /Catalog /Pages 2 0 R >>' + nl + 'endobj' + nl;
     const obj2 = '2 0 obj' + nl + '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' + nl + 'endobj' + nl;
@@ -394,8 +385,6 @@
       '<< /Type /Page /Parent 2 0 R ' +
       '/MediaBox [0 0 ' + pw.toFixed(2) + ' ' + ph.toFixed(2) + '] ' +
       '/CropBox [0 0 ' + pw.toFixed(2) + ' ' + ph.toFixed(2) + '] ' +
-      '/BleedBox [0 0 ' + pw.toFixed(2) + ' ' + ph.toFixed(2) + '] ' +
-      '/TrimBox [0 0 ' + pw.toFixed(2) + ' ' + ph.toFixed(2) + '] ' +
       '/Contents 4 0 R ' +
       '/Resources << /XObject << /Im1 5 0 R >> >> >>' + nl +
       'endobj' + nl;
@@ -491,7 +480,7 @@
       const safeName = name.replace(/[^a-zA-Zа-яА-ЯёЁ0-9 _-]/g,'').trim() || 'gramota';
       downloadCanvasAsPDF(canvas, safeName + '.pdf');
       btn.disabled = false;
-      btn.textContent = '⬇ Сохранить PDF A4';
+      btn.textContent = '⬇ Сохранить PDF';
     });
   }
 
